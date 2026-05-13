@@ -1,6 +1,6 @@
 {
   "name": "Remix: Amigo Đà Lạt",
   "description": "Giải pháp quản lý khách sạn chuyên nghiệp tại Đà Lạt: sơ đồ phòng trực quan, đặt phòng, check-in/out và quản lý thông tin khách hàng thời gian thực kết nối Google Sheets.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": ["geolocation"],
   "majorCapabilities": []
 }

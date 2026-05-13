@@ -17,6 +17,8 @@ export interface Branch {
   name: string;
   address: string;
   phone: string;
+  lat?: number;
+  lng?: number;
 }
 
 export interface Room {
@@ -93,9 +95,9 @@ export const INITIAL_TRANSACTIONS: Transaction[] = [];
 
 export interface HistoryLog {
   id: string;
-  type: 'booking' | 'cleaning';
-  roomId: string;
-  roomNumber: string;
+  type: 'booking' | 'cleaning' | 'attendance';
+  roomId?: string;
+  roomNumber?: string;
   userId: string;
   userName: string;
   timestamp: string;
@@ -103,6 +105,19 @@ export interface HistoryLog {
   notes?: string;
   details?: string;
   isRead?: boolean;
+}
+
+export interface Attendance {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  branchId: string;
+  type: 'check-in' | 'check-out';
+  timestamp: string;
+  lat: number;
+  lng: number;
+  distance: number;
+  status: 'valid' | 'invalid';
 }
 
 export interface Employee {

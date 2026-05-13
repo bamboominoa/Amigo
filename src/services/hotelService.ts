@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { Branch, Room, Booking, HistoryLog, Wallet, Transaction, Employee, INITIAL_BRANCHES, INITIAL_ROOMS, INITIAL_BOOKINGS, INITIAL_WALLETS, INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from '../types';
+import { Branch, Room, Booking, HistoryLog, Wallet, Transaction, Employee, Attendance, INITIAL_BRANCHES, INITIAL_ROOMS, INITIAL_BOOKINGS, INITIAL_WALLETS, INITIAL_TRANSACTIONS, INITIAL_EMPLOYEES } from '../types';
 import { sheetApi } from './api';
 
 const STORAGE_KEYS = {
@@ -10,6 +10,7 @@ const STORAGE_KEYS = {
   WALLETS: 'hotel_wallets',
   TRANSACTIONS: 'hotel_transactions',
   EMPLOYEES: 'hotel_employees',
+  ATTENDANCE: 'hotel_attendance',
 };
 
 export const hotelService = {
@@ -72,6 +73,9 @@ export const hotelService = {
           localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(data.Wallets));
         } else if (!localStorage.getItem(STORAGE_KEYS.WALLETS)) {
           localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(INITIAL_WALLETS));
+        }
+        if (data.Attendance && data.Attendance.length > 0) {
+          localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(data.Attendance));
         }
       }
     } catch (error) {
@@ -137,12 +141,18 @@ export const hotelService = {
   },
 
   deleteBranch: (branchId: string) => {
-    const branches = hotelService.getBranches();
-    localStorage.setItem(STORAGE_KEYS.BRANCHES, JSON.stringify(branches.filter(b => b.id !== branchId)));
+    const branches = hotelService.getBranches().filter(b => b.id !== branchId);
+    localStorage.setItem(STORAGE_KEYS.BRANCHES, JSON.stringify(branches));
     sheetApi.deleteRow('Branches', branchId);
     
-    const rooms = hotelService.getRooms();
-    localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(rooms.filter(r => r.branchId !== branchId)));
+    // Cleanup rooms
+    const rooms = hotelService.getRooms().filter(r => r.branchId !== branchId);
+    localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(rooms));
+    
+    // Note: Deleting rooms from sheet might require multiple API calls or a batch delete action
+    // For now we rely on local cleanup and suggest the user syncs
+    
+    return branches;
   },
 
   getRooms: (): Room[] => {
@@ -287,6 +297,45 @@ export const hotelService = {
       localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(rooms));
       sheetApi.updateRow('Rooms', rooms[roomIndex]);
     }
+  },
+
+  getAttendance: (): Attendance[] => {
+    const data = localStorage.getItem(STORAGE_KEYS.ATTENDANCE);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveAttendance: (attendance: Attendance) => {
+    const records = hotelService.getAttendance();
+    records.unshift(attendance);
+    localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(records));
+    sheetApi.createRow('Attendance', attendance);
+    
+    // Also log to history
+    hotelService.addLog({
+      id: 'att_' + Date.now(),
+      type: 'attendance',
+      userId: attendance.employeeId,
+      userName: attendance.employeeName,
+      timestamp: attendance.timestamp,
+      action: attendance.type === 'check-in' ? 'Chấm công vào' : 'Chấm công ra',
+      details: `${attendance.status === 'valid' ? 'Hợp lệ' : 'Không hợp lệ (ngoài bán kính)'} - Khoảng cách: ${Math.round(attendance.distance)}m`,
+      isRead: false
+    });
+  },
+
+  calculateDistance: (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371e3; // metres
+    const φ1 = lat1 * Math.PI / 180;
+    const φ2 = lat2 * Math.PI / 180;
+    const Δφ = (lat2 - lat1) * Math.PI / 180;
+    const Δλ = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+              Math.cos(φ1) * Math.cos(φ2) *
+              Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return R * c; // in metres
   },
 
   updateRoomStatus: (roomId: string, status: Room['status']) => {

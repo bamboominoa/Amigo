@@ -193,13 +193,14 @@ function setupSheets() {
   
   const schemas = {
     'booking': ['id', 'roomId', 'branchId', 'guestName', 'guestPhone', 'guestIdCard', 'checkIn', 'checkOut', 'status', 'deposit', 'services', 'totalPrice', 'receivedAmount', 'history', 'createdAt'],
-    'Branches': ['id', 'name', 'address'],
+    'Branches': ['id', 'name', 'address', 'phone', 'lat', 'lng'],
     'Rooms': ['id', 'number', 'type', 'price', 'status', 'cleanStatus', 'branchId'],
     'Employees': ['id', 'name', 'username', 'password', 'phone', 'position', 'salary', 'startDate', 'status', 'branchIds'],
     'Services': ['id', 'name', 'price', 'category', 'stock'],
     'Transactions': ['id', 'branchId', 'type', 'amount', 'category', 'date', 'description', 'paymentMethod'],
     'user': ['id', 'username', 'name', 'phone', 'role', 'position', 'branchIds'],
-    'logs': ['id', 'roomId', 'type', 'action', 'userId', 'userName', 'timestamp']
+    'logs': ['id', 'roomId', 'type', 'action', 'userId', 'userName', 'timestamp', 'details'],
+    'Attendance': ['id', 'employeeId', 'employeeName', 'branchId', 'timestamp', 'type', 'lat', 'lng', 'distance', 'status']
   };
   
   for (const [sheetName, headers] of Object.entries(schemas)) {
