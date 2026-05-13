@@ -11,6 +11,7 @@ const STORAGE_KEYS = {
   TRANSACTIONS: 'hotel_transactions',
   EMPLOYEES: 'hotel_employees',
   ATTENDANCE: 'hotel_attendance',
+  SERVICES: 'hotel_services',
 };
 
 export const hotelService = {
@@ -24,59 +25,89 @@ export const hotelService = {
         // We only use INITIAL data IF local storage is empty AND the fetched data is empty (first time run)
         
         const syncData = (sheetKey: string, storageKey: string, initialData: any, transform?: (item: any) => any) => {
-          const sheetList = data[sheetKey] || [];
-          if (sheetList.length > 0) {
-            const processed = transform ? sheetList.map(transform) : sheetList;
-            localStorage.setItem(storageKey, JSON.stringify(processed));
-          } else {
-            // If sheet is empty but local storage has data, we might have been offline or just started
-            // If local storage is also empty, we can show initial data but NOT push it to sheet automatically
-            const localData = localStorage.getItem(storageKey);
-            if (!localData) {
-              localStorage.setItem(storageKey, JSON.stringify(initialData));
+          const sheetList = data[sheetKey];
+          
+          if (sheetList === undefined) {
+             console.warn(`Sheet ${sheetKey} not found in remote data.`);
+             return;
+          }
+
+          // If we have an array from the server, we use it to overwrite local storage.
+          // This allows deletions on the server to be reflected in the app.
+          // Exception: If remote is empty AND we have no local data yet, we use defaults.
+          if (Array.isArray(sheetList)) {
+            if (sheetList.length > 0) {
+              console.log(`Syncing ${sheetKey}: Found ${sheetList.length} records.`);
+              try {
+                const processed = transform ? sheetList.map(transform) : sheetList;
+                localStorage.setItem(storageKey, JSON.stringify(processed));
+              } catch (err) {
+                console.error(`Error transforming ${sheetKey}:`, err);
+              }
+            } else {
+              // Remote is empty array
+              const localData = localStorage.getItem(storageKey);
+              if (!localData) {
+                console.log(`No local data for ${sheetKey}, using defaults.`);
+                localStorage.setItem(storageKey, JSON.stringify(initialData));
+              } else if (localData && initialData && JSON.stringify(initialData) === localData) {
+                // If local data is just the defaults and remote is empty, we keep defaults
+              } else if (localData) {
+                // IMPORTANT: If remote is empty but local has data, 
+                // we should clear local data ONLY if we are sure the user wants to sync emptiness.
+                // For now, let's allow it to clear if it's not the very first load.
+                console.log(`Sheet ${sheetKey} is empty on remote. Clearing local cache.`);
+                localStorage.setItem(storageKey, JSON.stringify([]));
+              }
             }
           }
         };
 
-        syncData('Employees', STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES);
+        syncData('Employees', STORAGE_KEYS.EMPLOYEES, INITIAL_EMPLOYEES, (e) => ({
+          ...e,
+          role: e.role || (e.position === 'Quản lý' ? 'admin' : 'staff')
+        }));
         syncData('Branches', STORAGE_KEYS.BRANCHES, INITIAL_BRANCHES);
         syncData('Rooms', STORAGE_KEYS.ROOMS, INITIAL_ROOMS, (r) => ({ 
           ...r, 
           price: Number(r.price),
           cleanStatus: r.cleanStatus || (r.status === 'cleaning' ? 'chưa vệ sinh' : 'vệ sinh xong')
         }));
-        syncData('booking', STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS, (b) => ({
-          ...b,
-          totalPrice: Number(b.totalPrice),
-          deposit: Number(b.deposit),
-          receivedAmount: Number(b.receivedAmount || 0),
-          services: typeof b.services === 'string' ? JSON.parse(b.services) : (b.services || []),
-          history: typeof b.history === 'string' ? JSON.parse(b.history) : (b.history || []),
-          guest: {
-            id: b.id || b.roomId + b.checkIn,
-            name: b.guestName,
-            phone: b.guestPhone,
-            idCard: b.guestIdCard,
-          }
-        }));
+        syncData('booking', STORAGE_KEYS.BOOKINGS, INITIAL_BOOKINGS, (b) => {
+          const safeParse = (val: any) => {
+            if (!val) return [];
+            if (Array.isArray(val)) return val;
+            try { return JSON.parse(val); } catch (e) { return []; }
+          };
+          
+          return {
+            ...b,
+            totalPrice: Number(b.totalPrice || 0),
+            deposit: Number(b.deposit || 0),
+            receivedAmount: Number(b.receivedAmount || 0),
+            services: safeParse(b.services),
+            history: safeParse(b.history),
+            guest: {
+              id: b.id || b.roomId + b.checkIn,
+              name: b.guestName || '',
+              phone: b.guestPhone || '',
+              idCard: b.guestIdCard || '',
+            }
+          };
+        });
         syncData('Transactions', STORAGE_KEYS.TRANSACTIONS, INITIAL_TRANSACTIONS, (t) => ({ 
           ...t, 
           amount: Number(t.amount),
           category: t.category || '',
           paymentMethod: t.paymentMethod || ''
         }));
-        
-        const logs = data.logs || [];
-        localStorage.setItem(STORAGE_KEYS.LOGS, JSON.stringify(logs));
-        
-        if (data.Wallets && data.Wallets.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(data.Wallets));
-        } else if (!localStorage.getItem(STORAGE_KEYS.WALLETS)) {
-          localStorage.setItem(STORAGE_KEYS.WALLETS, JSON.stringify(INITIAL_WALLETS));
-        }
-        if (data.Attendance && data.Attendance.length > 0) {
-          localStorage.setItem(STORAGE_KEYS.ATTENDANCE, JSON.stringify(data.Attendance));
-        }
+        syncData('Services', STORAGE_KEYS.SERVICES, []);
+        syncData('Wallets', STORAGE_KEYS.WALLETS, INITIAL_WALLETS, (w) => ({
+          ...w,
+          balance: Number(w.balance)
+        }));
+        syncData('Attendance', STORAGE_KEYS.ATTENDANCE, []);
+        syncData('logs', STORAGE_KEYS.LOGS, []);
       }
     } catch (error) {
       console.error("Error in fetchAllData:", error);
@@ -181,6 +212,30 @@ export const hotelService = {
     const rooms = hotelService.getRooms();
     localStorage.setItem(STORAGE_KEYS.ROOMS, JSON.stringify(rooms.filter(r => r.id !== roomId)));
     sheetApi.deleteRow('Rooms', roomId);
+  },
+
+  getServices: (): any[] => {
+    const data = localStorage.getItem(STORAGE_KEYS.SERVICES);
+    return data ? JSON.parse(data) : [];
+  },
+
+  saveService: (service: any) => {
+    const services = hotelService.getServices();
+    const index = services.findIndex(s => s.id === service.id);
+    if (index >= 0) {
+      services[index] = service;
+      sheetApi.updateRow('Services', service);
+    } else {
+      services.push(service);
+      sheetApi.createRow('Services', service);
+    }
+    localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(services));
+  },
+
+  deleteService: (serviceId: string) => {
+    const services = hotelService.getServices().filter(s => s.id !== serviceId);
+    localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(services));
+    sheetApi.deleteRow('Services', serviceId);
   },
 
   getBookings: (): Booking[] => {

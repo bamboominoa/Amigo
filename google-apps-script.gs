@@ -13,15 +13,38 @@
  * 10. Click 'Deploy' and copy the 'Web app URL'. Dùng URL này để gọi API từ Javascript/React.
  */
 
-const SPREADSHEET_ID = '1ZGhTotKKVTlD4BDx3yEsM5CzbvGo9mjaBbfG7q-1Dlc'; // ID của Google Sheet bạn vừa gửi
+const SPREADSHEET_ID = ''; // Để trống nếu Script này được tạo từ 'Tiện ích mở rộng' bên trong Google Sheet
+
+function getSpreadsheet() {
+  if (SPREADSHEET_ID && SPREADSHEET_ID.length > 5) {
+    try { 
+      return SpreadsheetApp.openById(SPREADSHEET_ID); 
+    } catch (e) { 
+      console.error("Lỗi khi mở Spreadsheet bằng ID:", e);
+    }
+  }
+  try {
+    return SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e) {
+    console.error("Lỗi khi lấy Active Spreadsheet:", e);
+    return null;
+  }
+}
 
 function doGet(e) {
   try {
     const action = e.parameter.action;
     const sheetName = e.parameter.sheet;
+    const ss = getSpreadsheet();
     
+    if (!ss) {
+      return response({ 
+        success: false, 
+        error: "Không thể kết nối với Google Sheet. Hãy kiểm tra SPREADSHEET_ID hoặc đảm bảo Script được tạo từ Tiện ích mở rộng của Sheet." 
+      });
+    }
+
     if (action === 'getAllData') {
-      // Trả về toàn bộ dữ liệu của tất cả các bảng (cẩn thận với dữ liệu lớn)
       const data = {
         booking: getSheetData('booking'),
         Branches: getSheetData('Branches'),
@@ -29,25 +52,32 @@ function doGet(e) {
         Employees: getSheetData('Employees'),
         Services: getSheetData('Services'),
         Transactions: getSheetData('Transactions'),
-        user: getSheetData('user'),
-        logs: getSheetData('logs')
+        logs: getSheetData('logs'),
+        Attendance: getSheetData('Attendance'),
+        Wallets: getSheetData('Wallets')
       };
       return response({ success: true, data: data });
     } else if (action === 'getData' && sheetName) {
-      // Lấy dữ liệu của 1 bảng cụ thể
       return response({ success: true, data: getSheetData(sheetName) });
+    } else if (action === 'test') {
+      return response({ 
+        success: true, 
+        message: "Kết nối thành công", 
+        spreadsheetName: ss.getName(),
+        time: new Date().toISOString() 
+      });
     }
     
-    return response({ error: "Tham số không hợp lệ" }, 400);
+    return response({ success: false, error: "Tham số action không hợp lệ hoặc thiếu sheetName" });
   } catch (error) {
-    return response({ error: error.toString() }, 500);
+    return response({ success: false, error: error.toString(), stack: error.stack });
   }
 }
 
 function doPost(e) {
   try {
     if (!e.postData || !e.postData.contents) {
-      return response({ error: "Không có dữ liệu POST" }, 400);
+      return response({ success: false, error: "Không có dữ liệu POST" });
     }
     
     const requestData = JSON.parse(e.postData.contents);
@@ -56,7 +86,7 @@ function doPost(e) {
     const payload = requestData.payload;
     
     if (!sheetName || !payload) {
-      return response({ error: "Thiếu sheetName hoặc payload" }, 400);
+      return response({ success: false, error: "Thiếu sheetName hoặc payload" });
     }
 
     if (action === 'create') {
@@ -64,65 +94,77 @@ function doPost(e) {
       return response({ success: true, data: result });
     } else if (action === 'update') {
       const result = updateRow(sheetName, payload);
-      return response({ success: true, data: result });
+      return response({ success: !!result, data: result, error: result ? null : "Không tìm thấy ID" });
     } else if (action === 'delete') {
       const result = deleteRow(sheetName, payload.id);
-      return response({ success: true, data: result });
+      return response({ success: !!result, data: result, error: result ? null : "Không tìm thấy ID" });
     }
     
-    return response({ error: "Hành động không hợp lệ" }, 400);
+    return response({ success: false, error: "Hành động không hợp lệ" });
   } catch (error) {
-    return response({ error: error.toString() }, 500);
+    return response({ success: false, error: error.toString() });
   }
 }
 
 // ----- CÁC HÀM XỬ LÝ LÕI -----
 
 function getSheetData(sheetName) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
-  if (!sheet) throw new Error(`Không tìm thấy bảng ${sheetName}`);
-  
-  const data = sheet.getDataRange().getValues();
-  if (data.length <= 1) return []; 
-  
-  const headers = data[0];
-  const rows = data.slice(1);
-  
-  return rows.map(row => {
-    const obj = {};
-    headers.forEach((header, index) => {
-      let val = row[index];
-      // Cố gắng parse lại JSON nếu giá trị là mảng/object được lưu dưới dạng chuỗi
-      if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
-        try {
-          val = JSON.parse(val);
-        } catch (e) {
-          // Bỏ qua lỗi parse, giữ nguyên chuỗi
+  try {
+    const ss = getSpreadsheet();
+    if (!ss) return [];
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return [];
+    
+    const data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return []; 
+    
+    const headers = data[0];
+    const rows = data.slice(1);
+    
+    return rows.filter(row => {
+      // Bỏ qua dòng trống
+      return row.some(cell => cell !== "");
+    }).map(row => {
+      const obj = {};
+      headers.forEach((header, index) => {
+        if (!header) return;
+        let val = row[index];
+        // Parse JSON strings
+        if (typeof val === 'string' && (val.startsWith('{') || val.startsWith('['))) {
+          try { val = JSON.parse(val); } catch (e) {}
         }
-      }
-      obj[header] = val;
+        obj[header] = val;
+      });
+      return obj;
     });
-    return obj;
-  });
+  } catch (e) {
+    console.error(`Error reading sheet ${sheetName}:`, e);
+    return [];
+  }
 }
 
 function appendRow(sheetName, payload) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
-  if (!sheet) throw new Error(`Không tìm thấy bảng ${sheetName}`);
+  const ss = getSpreadsheet();
+  if (!ss) throw new Error("Chưa kết nối Spreadsheet");
   
-  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    const headers = Object.keys(payload);
+    sheet.appendRow(headers);
+  }
   
-  // Tự động sinh ID nếu chưa có
+  const headers = sheet.getRange(1, 1, 1, Math.max(1, sheet.getLastColumn())).getValues()[0];
+  
   if (!payload.id) {
-    payload.id = Utilities.getUuid();
+    payload.id = 'ID_' + Utilities.getUuid();
   }
   
   const row = headers.map(header => {
     let val = payload[header];
-    if (typeof val === 'object' && val !== null) {
-      val = JSON.stringify(val);
-    }
-    return val !== undefined ? val : '';
+    if (val === undefined || val === null) return '';
+    if (typeof val === 'object') return JSON.stringify(val);
+    return val;
   });
   
   sheet.appendRow(row);
@@ -130,52 +172,62 @@ function appendRow(sheetName, payload) {
 }
 
 function updateRow(sheetName, payload) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
-  if (!sheet) throw new Error(`Không tìm thấy bảng ${sheetName}`);
-  if (!payload.id) throw new Error('Cần có ID để cập nhật');
-  
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const idIndex = headers.indexOf('id');
-  
-  if (idIndex === -1) throw new Error('Bảng không có cột ID');
-  
-  for (let i = 1; i < data.length; i++) {
-    // So sánh ID dạng chuỗi
-    if (String(data[i][idIndex]) === String(payload.id)) {
-      const rowToUpdate = i + 1;
-      
-      headers.forEach((header, colIndex) => {
-        if (payload.hasOwnProperty(header)) {
-          let val = payload[header];
-          if (typeof val === 'object' && val !== null) {
-             val = JSON.stringify(val);
+  try {
+    const ss = getSpreadsheet();
+    if (!ss) return null;
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet || !payload.id) return null;
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idIndex = headers.indexOf('id');
+    
+    if (idIndex === -1) return null;
+    
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idIndex]) === String(payload.id)) {
+        headers.forEach((header, colIndex) => {
+          if (payload.hasOwnProperty(header)) {
+            let val = payload[header];
+            if (val === undefined || val === null) val = "";
+            if (typeof val === 'object') val = JSON.stringify(val);
+            sheet.getRange(i + 1, colIndex + 1).setValue(val);
           }
-          sheet.getRange(rowToUpdate, colIndex + 1).setValue(val);
-        }
-      });
-      return payload;
+        });
+        return payload;
+      }
     }
+    return null;
+  } catch (e) {
+    console.error(`Error updating ${sheetName}:`, e);
+    return null;
   }
-  throw new Error(`Không tìm thấy bản ghi có id ${payload.id}`);
 }
 
 function deleteRow(sheetName, id) {
-  const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(sheetName);
-  if (!sheet) throw new Error(`Không tìm thấy bảng ${sheetName}`);
-  if (!id) throw new Error('Cần có ID để xóa');
-  
-  const data = sheet.getDataRange().getValues();
-  const headers = data[0];
-  const idIndex = headers.indexOf('id');
-  
-  for (let i = 1; i < data.length; i++) {
-    if (String(data[i][idIndex]) === String(id)) {
-      sheet.deleteRow(i + 1);
-      return { id: id, deleted: true };
+  try {
+    const ss = getSpreadsheet();
+    if (!ss) return null;
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet || !id) return null;
+    
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const idIndex = headers.indexOf('id');
+    
+    if (idIndex === -1) return null;
+    
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][idIndex]) === String(id)) {
+        sheet.deleteRow(i + 1);
+        return { id: id };
+      }
     }
+    return null;
+  } catch (e) {
+    console.error(`Error deleting from ${sheetName}:`, e);
+    return null;
   }
-  throw new Error(`Không tìm thấy bản ghi có id ${id} để xóa`);
 }
 
 // Hàm chuẩn hóa response API
@@ -189,18 +241,18 @@ function response(data, status = 200) {
 
 // Chạy hàm này 1 lần duy nhất từ Editor để tạo các bảng và cột tự động
 function setupSheets() {
-  const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  const ss = getSpreadsheet();
   
   const schemas = {
     'booking': ['id', 'roomId', 'branchId', 'guestName', 'guestPhone', 'guestIdCard', 'checkIn', 'checkOut', 'status', 'deposit', 'services', 'totalPrice', 'receivedAmount', 'history', 'createdAt'],
     'Branches': ['id', 'name', 'address', 'phone', 'lat', 'lng'],
     'Rooms': ['id', 'number', 'type', 'price', 'status', 'cleanStatus', 'branchId'],
-    'Employees': ['id', 'name', 'username', 'password', 'phone', 'position', 'salary', 'startDate', 'status', 'branchIds'],
+    'Employees': ['id', 'name', 'username', 'password', 'phone', 'position', 'role', 'salary', 'startDate', 'status', 'branchIds'],
     'Services': ['id', 'name', 'price', 'category', 'stock'],
     'Transactions': ['id', 'branchId', 'type', 'amount', 'category', 'date', 'description', 'paymentMethod'],
-    'user': ['id', 'username', 'name', 'phone', 'role', 'position', 'branchIds'],
     'logs': ['id', 'roomId', 'type', 'action', 'userId', 'userName', 'timestamp', 'details'],
-    'Attendance': ['id', 'employeeId', 'employeeName', 'branchId', 'timestamp', 'type', 'lat', 'lng', 'distance', 'status']
+    'Attendance': ['id', 'employeeId', 'employeeName', 'branchId', 'timestamp', 'type', 'lat', 'lng', 'distance', 'status'],
+    'Wallets': ['id', 'name', 'balance', 'type']
   };
   
   for (const [sheetName, headers] of Object.entries(schemas)) {

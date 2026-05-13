@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import fs from "fs";
 
-const SPREADSHEET_URL = process.env.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbyrZMa_uzMRfdYSQDvayRf-SpRgU2uJYl2PeNUl1RYeGXP79RDXB6xXG0l7P6wOQFWh5w/exec";
+const SPREADSHEET_URL = process.env.GOOGLE_SCRIPT_URL || "https://script.google.com/macros/s/AKfycbxzYP59sDK5Bq9DVTkT3pTaV7LdJ_VErhmJzTNRZElaqovT53Pi2K54t7-zSKfpNUk2YA/exec";
 
 async function startServer() {
   const app = express();
