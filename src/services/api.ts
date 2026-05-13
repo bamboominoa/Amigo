@@ -1,4 +1,4 @@
-export const SPREADSHEET_API_URL = "/api";
+export const SPREADSHEET_API_URL = "https://script.google.com/macros/s/AKfycbxzYP59sDK5Bq9DVTkT3pTaV7LdJ_VErhmJzTNRZElaqovT53Pi2K54t7-zSKfpNUk2YA/exec";
 
 export const sheetApi = {
   async getAllData() {

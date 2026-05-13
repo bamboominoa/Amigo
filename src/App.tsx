@@ -927,18 +927,6 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
-      {!process.env.GOOGLE_SCRIPT_URL && (
-        <div className="bg-amber-500 text-white px-4 py-1 text-[8px] font-black uppercase tracking-[0.2em] text-center shrink-0 flex items-center justify-center gap-4">
-          <AlertTriangle size={12} />
-          Bác đang dùng Server chung của Amigo. Dữ liệu có thể bị ghi đè!
-          <button 
-            onClick={() => window.alert("Để bảo mật dữ liệu:\n1. Copy mã nguồn google-apps-script.gs\n2. Dán vào Apps Script của Sheet bác sở hữu\n3. Deploy Web App (chọn Anyone)\n4. Dán URL vào AI Studio -> Settings -> Secrets -> GOOGLE_SCRIPT_URL")}
-            className="px-2 py-0.5 bg-white/20 hover:bg-white/30 rounded underline"
-          >
-            HD riêng
-          </button>
-        </div>
-      )}
       <div className="flex flex-1 overflow-hidden relative">
         {/* Mobile Sidebar Overlay */}
       <AnimatePresence>
